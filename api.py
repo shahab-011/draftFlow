@@ -11,8 +11,25 @@ from pydantic import BaseModel, Field
 from iterative_tool import MAX_ATTEMPTS, app as workflow
 
 app = FastAPI(title="Iterative LinkedIn Post Generator", version="1.0.0")
-origins = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174").split(",")
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"], allow_headers=["*"])
+
+
+def configured_origins() -> list[str]:
+    """Parse comma-separated origins and tolerate whitespace/trailing slashes."""
+    value = os.getenv("FRONTEND_ORIGIN")
+    if not value:
+        value = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174"
+    return [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=configured_origins(),
+    # Vercel creates a new hostname for previews. Keep preview access limited
+    # to HTTPS Vercel subdomains; production/custom domains use FRONTEND_ORIGIN.
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app",
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 class GenerateRequest(BaseModel):
@@ -26,6 +43,11 @@ def emit(event: str, data: dict[str, Any]) -> str:
 @app.get("/health")
 def health():
     return {"status": "ok", "max_attempts": MAX_ATTEMPTS}
+
+
+@app.get("/")
+def root():
+    return {"service": "Draftflow API", "status": "ok", "health": "/health"}
 
 
 @app.post("/api/generate")
